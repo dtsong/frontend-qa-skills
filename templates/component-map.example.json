@@ -1,0 +1,70 @@
+{
+  "version": "1.0",
+  "route": "/dashboard",
+  "generatedAt": "2026-02-14T14:30:00.000Z",
+  "projectRoot": "/Users/dev/my-nextjs-app",
+  "depth": 3,
+  "completeness": "partial",
+  "framework": {
+    "name": "next",
+    "routerType": "app",
+    "version": "14.2.0"
+  },
+  "styling": {
+    "primary": "tailwind",
+    "config": "tailwind.config.ts"
+  },
+  "testFramework": {
+    "unit": "vitest",
+    "e2e": "playwright",
+    "rtl": true
+  },
+  "entryComponent": {
+    "filePath": "/Users/dev/my-nextjs-app/app/dashboard/page.tsx",
+    "exportName": "default",
+    "displayName": "DashboardPage",
+    "boundary": "server",
+    "directiveFound": null,
+    "props": [],
+    "hooks": [],
+    "stateManagement": [],
+    "imports": [
+      {
+        "targetPath": "/Users/dev/my-nextjs-app/app/components/DashboardLayout.tsx",
+        "importType": "component",
+        "isBarrelExport": false,
+        "isDynamic": false,
+        "unresolved": false
+      }
+    ],
+    "dataFetching": [
+      {
+        "type": "fetch",
+        "location": "app/dashboard/page.tsx:12",
+        "description": "fetch('/api/dashboard-data') with revalidate: 60"
+      }
+    ],
+    "styling_approach": "tailwind",
+    "has_conditional_classes": false,
+    "design_system_component": false,
+    "accepts_className_prop": false,
+    "layout_role": "page-layout"
+  },
+  "sharedComponents": [],
+  "unresolvedImports": [
+    {
+      "sourcePath": "/Users/dev/my-nextjs-app/app/components/MetricsGrid.tsx",
+      "importSpecifier": "./charts/RevenueChart",
+      "reason": "depth-limit"
+    }
+  ],
+  "cachedFiles": [
+    "app/dashboard/page.tsx",
+    "app/components/DashboardLayout.tsx",
+    "app/components/Sidebar.tsx",
+    "app/components/MainContent.tsx",
+    "app/components/MetricsGrid.tsx",
+    "app/components/NavItem.tsx",
+    "app/components/UserMenu.tsx"
+  ]
+}
