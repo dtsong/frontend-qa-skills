@@ -1,21 +1,53 @@
 ---
 name: ui-bug-investigator
-description: Systematic diagnosis of UI bugs in Next.js App Router components — rendering, state, data flow, and event handling issues
-license: Apache-2.0
-metadata:
-  author: Daniel Song
-  version: 1.0.0
-  suite: frontend-qa-skills
-  pipeline_position: S1
-  upstream_contract: ComponentMap
-  downstream_contract: DiagnosisReport
+description: >
+  Use when a user reports a non-CSS UI bug in a Next.js App Router application —
+  "blank page," "data not loading," "click does nothing," "hydration mismatch,"
+  "flicker on navigation," or "state not updating." Runs symptom-targeted
+  diagnostic checks against a component map to identify rendering, state, event
+  handling, and data flow issues. Not for CSS layout, styling, or visual design
+  problems — route those to css-layout-debugger.
+model:
+  preferred: sonnet
+  acceptable: [sonnet, opus]
+  minimum: sonnet
+  allow_downgrade: false
+  reasoning_demand: medium
 ---
 
 # UI Bug Investigator
 
 Diagnose non-CSS UI bugs by running symptom-targeted checks against the component map. Produce a DiagnosisReport with FLAGGED/CLEAR/SKIPPED findings.
 
+## Scope Constraints
+
+- Read-only access to source files in the component tree
+- Write access limited to `.claude/qa-cache/artifacts/` for DiagnosisReport persistence
+- Does not modify source code or run shell commands
+- Investigates only components within the ComponentMap — stops at library boundaries (`@radix-ui`, `shadcn/ui`, `@mui`, etc.)
+
+## Inputs
+
+- **ComponentMap** (required): Path to `.claude/qa-cache/component-maps/{route-slug}.json`
+- **Symptom description** (required): User-reported bug description
+- **Classification** (required): Category from qa-coordinator (rendering, state, event, data-flow, hydration)
+- **Screenshot** (optional): Visual evidence of the issue
+
 ## Procedure
+
+Copy this checklist and update as you complete each step:
+```
+Progress:
+- [ ] Step 1: Consume Component Map
+- [ ] Step 2: Classify Symptom
+- [ ] Step 3: Identify Target Components
+- [ ] Step 4: Run Checks
+- [ ] Step 5: Assess Confidence
+- [ ] Step 6: Output DiagnosisReport
+- [ ] Step 7: Persist Artifact
+```
+
+Note: If you've lost context of previous steps (e.g., after context compaction), check the progress checklist above. Resume from the last unchecked item. Re-read relevant reference files if needed.
 
 ### Step 1: Consume Component Map
 
@@ -115,3 +147,15 @@ Save the DiagnosisReport to `.claude/qa-cache/artifacts/diag-{timestamp}-{id}.js
 - `rootCause`: the highest-confidence FLAGGED finding (or null)
 - `differentialDiagnosis`: all CLEAR items with their cleared reasons
 - `suggestedFix`: a one-line description of what to change (consumed by component-fix-and-verify)
+
+## Handoff
+
+Pass the DiagnosisReport artifact path to qa-coordinator. The report contains structured `rootCause`, `differentialDiagnosis`, and `suggestedFix` fields consumed by `component-fix-and-verify`.
+
+## References
+
+| Path | Load Condition | Content Summary |
+|------|---------------|-----------------|
+| `references/rendering-state-checks.md` | Symptom is rendering, state, or hydration | Checklist for boundary mismatches, key props, conditional rendering, hydration |
+| `references/event-handling-checks.md` | Symptom is click/keyboard/focus issues | Checklist for handler attachment, propagation, focus management |
+| `references/data-flow-checks.md` | Symptom is data loading, staleness, or missing data | Checklist for fetch patterns, caching, server actions, prop threading |

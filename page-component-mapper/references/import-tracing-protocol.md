@@ -1,5 +1,17 @@
 # Import Tracing Protocol
 
+## Table of Contents
+
+- [tsconfig Path Resolution](#tsconfig-path-resolution)
+- [File Extension Resolution Order](#file-extension-resolution-order)
+- [Barrel Export Handling](#barrel-export-handling)
+- [Dynamic Import Handling](#dynamic-import-handling)
+- [External Package Detection](#external-package-detection)
+- [Server/Client Boundary Rules](#serverclient-boundary-rules)
+- [Monorepo Handling](#monorepo-handling)
+- [Style Import Classification](#style-import-classification)
+- [Depth Limit Behavior](#depth-limit-behavior)
+
 ## tsconfig Path Resolution
 
 1. Read `tsconfig.json`. If `extends` is present (e.g., `"extends": "./tsconfig.app.json"`), read the parent first and merge — child overrides parent.

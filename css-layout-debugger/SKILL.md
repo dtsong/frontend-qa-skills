@@ -1,18 +1,58 @@
 ---
-skill: css-layout-debugger
-description: Diagnose CSS, layout, and styling issues through a 6-phase pipeline that mirrors browser evaluation order. Handles Tailwind, CSS Modules, styled-components, and vanilla CSS.
-pipeline_position: S2
-upstream_contract: ComponentMap
-downstream_contract: DiagnosisReport
+name: css-layout-debugger
+description: >
+  Use when a user reports CSS, layout, or styling issues in a Next.js application —
+  "element overlapping," "spacing is wrong," "responsive layout broken," "dark mode
+  not working," "Tailwind classes not applying," or "alignment off." Diagnoses through
+  a 6-phase pipeline that mirrors browser evaluation order, covering token resolution,
+  cascade conflicts, layout models, stacking contexts, and viewport responsiveness.
+  Handles Tailwind, CSS Modules, styled-components, and vanilla CSS. Not for
+  JavaScript logic bugs, data fetching issues, or server-side rendering errors —
+  route those to ui-bug-investigator.
+model:
+  preferred: sonnet
+  acceptable: [sonnet, opus]
+  minimum: sonnet
+  allow_downgrade: false
+  reasoning_demand: medium
 ---
+
+# CSS Layout Debugger
+
+Diagnose CSS/layout/styling issues through a 6-phase pipeline mirroring browser evaluation order.
+
+## Scope Constraints
+
+- Read-only access to source files, config files (`tailwind.config.*`, CSS files), and component files in the ComponentMap
+- Write access limited to `.claude/qa-cache/artifacts/` for DiagnosisReport persistence
+- Does not modify source code or run shell commands
+- Inspects only components and styles within the ComponentMap — stops at external library internals
 
 ## Inputs
 
-Receive from qa-coordinator: route path, symptom description, optional screenshot, ComponentMap artifact.
-
-Read the ComponentMap. Extract `styling.primary` and the target component's `styling_approach`, `has_conditional_classes`, `design_system_component`, and `accepts_className_prop` fields. If ComponentMap completeness is `partial` or `shallow`, warn the user that some components were not traced.
+- **ComponentMap** (required): Path to `.claude/qa-cache/component-maps/{route-slug}.json`
+- **Route path** (required): The route where the issue appears
+- **Symptom description** (required): User-reported styling/layout bug
+- **Screenshot** (optional): Visual evidence of the issue
 
 ## Procedure
+
+Copy this checklist and update as you complete each phase:
+```
+Progress:
+- [ ] Phase 1: Style Approach Detection
+- [ ] Phase 2: Token/Variable Resolution
+- [ ] Phase 3: Cascade & Specificity
+- [ ] Phase 4: Layout Model
+- [ ] Phase 5: Stacking & Paint
+- [ ] Phase 6: Viewport & Responsiveness
+- [ ] Visual Triage (if screenshot)
+- [ ] Output DiagnosisReport
+```
+
+Note: If you've lost context of previous phases (e.g., after context compaction), check the progress checklist above. Resume from the last unchecked item. Re-read relevant reference files if needed.
+
+Read the ComponentMap. Extract `styling.primary` and the target component's `styling_approach`, `has_conditional_classes`, `design_system_component`, and `accepts_className_prop` fields. If ComponentMap completeness is `partial` or `shallow`, warn the user that some components were not traced.
 
 Execute phases in this fixed order. Stop early when a root cause is found with high confidence. Never reorder phases.
 
@@ -123,4 +163,14 @@ SKIPPED  [phase]: [reason] | SKIPPED  [phase]: [reason]
 Checked: [N items] (tokens, cascade, layout) | Not checked: stacking, viewport | Confidence: High
 ```
 
-Populate DiagnosisReport artifact with structured findings, then pass to qa-coordinator for user review.
+## Handoff
+
+Pass the DiagnosisReport artifact path to qa-coordinator. The report contains structured findings with `rootCause`, severity, and suggested fix in the project's styling vocabulary. Consumed by `component-fix-and-verify`.
+
+## References
+
+| Path | Load Condition | Content Summary |
+|------|---------------|-----------------|
+| `references/tailwind-conflict-map.md` | Phase 3, Tailwind detected | Utility conflict pairs, tailwind-merge resolution rules |
+| `references/layout-model-checks.md` | Phase 4, always | Flexbox, grid, box model, positioning checklists |
+| `references/stacking-viewport-checks.md` | Phase 5-6, as needed | Stacking context rules, viewport unit issues, responsive checks |

@@ -1,21 +1,57 @@
 ---
 name: page-component-mapper
-description: Map a Next.js route to its full component tree with server/client boundaries, props, hooks, data fetching, and styling metadata. Use when investigating any frontend issue, before diagnosis or debugging.
-license: Apache-2.0
-metadata:
-  author: Daniel Song
-  version: 1.0.0
-  suite: frontend-qa-skills
-  pipeline_position: S0
-  upstream_contract: Route
-  downstream_contract: ComponentMap
+description: >
+  Use when investigating any frontend issue before diagnosis or debugging — maps a
+  Next.js route to its full component tree. Resolves "what components render on this
+  page," "show me the component tree for /dashboard," or "trace imports for this
+  route." Produces a ComponentMap artifact with server/client boundaries, props, hooks,
+  data fetching, and styling metadata consumed by all downstream QA skills. Not for
+  diagnosing bugs, fixing code, or generating tests — those are handled by specialist
+  skills after mapping is complete.
+model:
+  preferred: sonnet
+  acceptable: [sonnet, opus]
+  minimum: sonnet
+  allow_downgrade: false
+  reasoning_demand: medium
 ---
 
 # Page Component Mapper
 
 Given a route, produce a depth-limited component tree with file paths, server/client boundaries, props, hooks, state management, data fetching patterns, and styling metadata. Output a ComponentMap artifact consumed by all downstream skills.
 
+## Scope Constraints
+
+- Read-only access to source files, `tsconfig.json`, `package.json`, `next.config.*`
+- Write access limited to `.claude/qa-cache/component-maps/` for ComponentMap persistence
+- Does not modify source code, run test commands, or execute build tools
+- Traces imports up to configurable depth limit (default 3) — stops at external packages and depth boundary
+
+## Inputs
+
+- **Route path** (required): The Next.js route to map (e.g., `/dashboard/settings`)
+- **Depth** (optional, default 3): Maximum import tracing depth. Override with `--depth N`
+- **Fresh flag** (optional): `--fresh` to bypass cache and rebuild
+
+## Input Sanitization
+
+- Route paths are used for file resolution via `app/{route}/page.tsx` or `pages/{route}.tsx`. Validate that the route contains only alphanumeric characters, hyphens, underscores, forward slashes, and brackets (for dynamic segments like `[id]`). Reject routes containing `..`, shell metacharacters, or null bytes.
+- Depth values must be positive integers between 1 and 10.
+
 ## Procedure
+
+Copy this checklist and update as you complete each step:
+```
+Progress:
+- [ ] Step 0: Check Cache
+- [ ] Step 1: Resolve tsconfig Path Aliases
+- [ ] Step 2: Identify Route Entry Points
+- [ ] Step 3: Trace Imports (Depth-Limited)
+- [ ] Step 4: Classify Completeness
+- [ ] Step 5: Persist and Present
+```
+
+Note: If you've lost context of previous steps (e.g., after context compaction), check the progress checklist above. Resume from the last unchecked item. Re-read relevant reference files if needed.
 
 ### Step 0: Check Cache
 
@@ -124,3 +160,14 @@ The ComponentMap JSON follows the schema in the design document. Key fields:
   "cachedFiles": ["..."]
 }
 ```
+
+## Handoff
+
+Pass the ComponentMap artifact path to qa-coordinator. The map contains the full component tree with `boundary`, `hooks`, `dataFetching`, and `styling_approach` fields consumed by `ui-bug-investigator` and `css-layout-debugger`.
+
+## References
+
+| Path | Load Condition | Content Summary |
+|------|---------------|-----------------|
+| `references/caching-protocol.md` | Step 0, when cache file exists | Cache validity rules, TTL, invalidation triggers |
+| `references/import-tracing-protocol.md` | Step 3, always | Path alias resolution, barrel handling, dynamic imports, boundary rules |

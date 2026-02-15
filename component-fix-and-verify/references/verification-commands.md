@@ -1,5 +1,13 @@
 # Verification Commands Reference
 
+## Table of Contents
+
+- [TypeScript Checking](#typescript-checking)
+- [Lint Checking](#lint-checking)
+- [Test Running](#test-running)
+- [Infrastructure Detection Summary](#infrastructure-detection-summary)
+- [E2E Tests (Playwright)](#e2e-tests-playwright)
+
 ## TypeScript Checking
 
 ### Scoped (affected files only)

@@ -1,5 +1,14 @@
 # Playwright E2E Patterns
 
+## Table of Contents
+
+- [When to Use Playwright](#when-to-use-playwright)
+- [Test Structure](#test-structure)
+- [Locator Priority](#locator-priority-same-as-rtl)
+- [Common Regression Patterns](#common-regression-patterns)
+- [API Mocking (Route Handlers)](#api-mocking-route-handlers)
+- [Anti-Patterns](#anti-patterns-never-generate-these)
+
 ## When to Use Playwright
 
 Hard rule: async server components cannot be unit-tested with Vitest+RTL because they require the Next.js server runtime. Route these to Playwright.

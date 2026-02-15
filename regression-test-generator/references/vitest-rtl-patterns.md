@@ -1,5 +1,12 @@
 # Vitest + React Testing Library Patterns
 
+## Table of Contents
+
+- [Query Priority](#query-priority-use-in-this-order)
+- [Component Rendering Patterns](#component-rendering-patterns)
+- [Assertion Patterns for Common Regressions](#assertion-patterns-for-common-regressions)
+- [Anti-Patterns](#anti-patterns-never-generate-these)
+
 ## Query Priority (Use In This Order)
 
 | Priority | Query | When to use |
