@@ -1,0 +1,145 @@
+# .github/workflows/skill-publish.yml
+# Stage 4: Publish — runs on version tags
+#
+# Governance Spec v1.3 §8.3
+# Packages changed skills since last tag and creates a GitHub release.
+# Runs lint checks as a safety gate before publishing.
+
+name: "Skill Publish"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # Safety gate: run lint checks before publishing
+  lint-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml tiktoken
+
+      - name: "🔒 Security scan"
+        run: |
+          if [ -f pipeline/hooks/check_security.py ]; then
+            python3 pipeline/hooks/check_security.py .
+          else
+            echo "⚠️ Security hook not found — skipping"
+          fi
+
+      - name: "📋 Structural validation"
+        run: |
+          FAILED=0
+          for hook in check_frontmatter check_references check_isolation check_context_load; do
+            if [ -f "pipeline/hooks/${hook}.py" ]; then
+              echo "Running $hook..."
+              python3 "pipeline/hooks/${hook}.py" . || FAILED=1
+            fi
+          done
+          if [ $FAILED -eq 1 ]; then
+            echo "❌ Structural checks failed — cannot publish"
+            exit 1
+          fi
+
+  publish:
+    needs: lint-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for tag comparison
+
+      - name: Determine changed skills since last tag
+        id: changes
+        run: |
+          PREV_TAG=$(git describe --abbrev=0 --tags HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            echo "Previous tag: $PREV_TAG"
+            CHANGED=$(git diff --name-only "$PREV_TAG"...HEAD -- skills/ SKILL.md | \
+              sed 's|skills/\([^/]*\)/.*|\1|;s|/SKILL.md||' | sort -u)
+          else
+            echo "No previous tag — packaging all skills"
+            CHANGED=$(find skills/ -maxdepth 1 -mindepth 1 -type d -exec basename {} \; 2>/dev/null | sort -u)
+            # Include root SKILL.md if it exists
+            if [ -f "SKILL.md" ]; then
+              CHANGED="$(basename $(pwd))"$'\n'"$CHANGED"
+            fi
+          fi
+          echo "Changed skills:"
+          echo "$CHANGED"
+          echo "skills<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Package skills
+        run: |
+          mkdir -p dist/
+          for skill in ${{ steps.changes.outputs.skills }}; do
+            SKILL_DIR="skills/$skill"
+            if [ ! -d "$SKILL_DIR" ]; then
+              # Might be root-level skill
+              if [ -f "SKILL.md" ]; then
+                SKILL_DIR="."
+              else
+                echo "⚠️ Skill directory not found: $SKILL_DIR — skipping"
+                continue
+              fi
+            fi
+
+            echo "📦 Packaging: $skill"
+
+            if [ -f pipeline/scripts/package-skill.sh ]; then
+              bash pipeline/scripts/package-skill.sh "$SKILL_DIR" "dist/$skill"
+            else
+              # Inline fallback: tar the skill directory
+              tar -czf "dist/${skill}.tar.gz" \
+                --exclude="eval-cases" \
+                --exclude="eval-results" \
+                --exclude="eval-baselines" \
+                --exclude=".git" \
+                "$SKILL_DIR"
+            fi
+          done
+
+          echo ""
+          echo "=== Packages ==="
+          ls -lh dist/ 2>/dev/null || echo "No packages created"
+
+      - name: Generate release notes
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git describe --abbrev=0 --tags HEAD^ 2>/dev/null || echo "")
+
+          echo "# $TAG Release Notes" > release-notes.md
+          echo "" >> release-notes.md
+          echo "## Changed Skills" >> release-notes.md
+          echo "" >> release-notes.md
+          for skill in ${{ steps.changes.outputs.skills }}; do
+            echo "- **$skill**" >> release-notes.md
+          done
+          echo "" >> release-notes.md
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "## Commits since $PREV_TAG" >> release-notes.md
+            echo "" >> release-notes.md
+            git log --oneline "$PREV_TAG"...HEAD -- skills/ | head -20 >> release-notes.md
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: dist/*
+          fail_on_unmatched_files: false

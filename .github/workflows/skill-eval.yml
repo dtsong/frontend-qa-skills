@@ -1,0 +1,230 @@
+# .github/workflows/skill-eval.yml
+# Stage 3: Eval Execution — runs on merge to main + manual dispatch
+# Target: <30 minutes
+#
+# Governance Spec v1.3 §8.3
+# Three eval dimensions:
+#   1. Output evals — does the skill produce correct results?
+#   2. Trigger evals — does the skill activate for the right requests?
+#   3. Navigation evals — does the agent traverse skill files effectively?
+#
+# Requires ANTHROPIC_API_KEY secret for running evals against Claude.
+
+name: "Skill Eval Execution"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "skills/**"
+  workflow_dispatch:
+    inputs:
+      skill_path:
+        description: "Path to specific skill to evaluate (or 'all')"
+        required: true
+        default: "all"
+      model:
+        description: "Model to run evals against"
+        required: true
+        default: "sonnet"
+        type: choice
+        options:
+          - haiku
+          - sonnet
+          - opus
+      eval_type:
+        description: "Which evals to run"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - output
+          - trigger
+          - navigation
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml tiktoken
+
+      - name: Identify eval targets
+        id: targets
+        run: |
+          SKILL_PATH="${{ inputs.skill_path || 'all' }}"
+          if [ "$SKILL_PATH" = "all" ]; then
+            # Find all skills that have eval cases
+            TARGETS=$(find . -name "evals.json" -path "*/eval-cases/*" | \
+              sed 's|/eval-cases/.*||' | sort -u)
+          else
+            TARGETS="$SKILL_PATH"
+          fi
+          echo "targets<<EOF" >> $GITHUB_OUTPUT
+          echo "$TARGETS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Eval targets:"
+          echo "$TARGETS"
+
+      # ──────────────────────────────────────────────────────────
+      # OUTPUT EVALS — does the skill produce correct results?
+      # ──────────────────────────────────────────────────────────
+
+      - name: "📝 Run output evals"
+        if: inputs.eval_type == 'all' || inputs.eval_type == 'output' || inputs.eval_type == ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          MODEL="${{ inputs.model || 'sonnet' }}"
+          echo "=== Output Evals (model: $MODEL) ==="
+          mkdir -p eval-results/output
+
+          if [ -f pipeline/scripts/run-evals.sh ]; then
+            bash pipeline/scripts/run-evals.sh \
+              --targets "${{ steps.targets.outputs.targets }}" \
+              --model "$MODEL" \
+              --output-dir eval-results/output
+          else
+            echo "⚠️ run-evals.sh not found — skipping output evals"
+            echo "Run the governance init prompt to generate eval scripts."
+          fi
+
+      # ──────────────────────────────────────────────────────────
+      # TRIGGER EVALS — does the skill activate for right requests?
+      # ──────────────────────────────────────────────────────────
+
+      - name: "🎯 Run trigger evals"
+        if: inputs.eval_type == 'all' || inputs.eval_type == 'trigger' || inputs.eval_type == ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          MODEL="${{ inputs.model || 'sonnet' }}"
+          echo "=== Trigger Evals (model: $MODEL) ==="
+          mkdir -p eval-results/trigger
+
+          if [ -f pipeline/scripts/run-trigger-evals.sh ]; then
+            bash pipeline/scripts/run-trigger-evals.sh \
+              --targets "${{ steps.targets.outputs.targets }}" \
+              --model "$MODEL" \
+              --approach "B" \
+              --output-dir eval-results/trigger
+          else
+            # Fallback: check if trigger eval cases exist and report
+            echo "⚠️ run-trigger-evals.sh not found"
+            TRIGGER_CASES=$(find . -name "*-triggers.md" -path "*/trigger-cases/*" | wc -l)
+            echo "Found $TRIGGER_CASES trigger eval case files"
+            if [ "$TRIGGER_CASES" -eq 0 ]; then
+              echo "No trigger eval cases found. Generate them with:"
+              echo "  skill-governance-claude-code-commands.md → 'Trigger Eval Scaffold'"
+            fi
+          fi
+
+      # ──────────────────────────────────────────────────────────
+      # NAVIGATION EVALS — does the agent traverse files correctly?
+      # ──────────────────────────────────────────────────────────
+
+      - name: "🗺️ Run navigation evals"
+        if: inputs.eval_type == 'all' || inputs.eval_type == 'navigation' || inputs.eval_type == ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          MODEL="${{ inputs.model || 'sonnet' }}"
+          echo "=== Navigation Evals (model: $MODEL) ==="
+          mkdir -p eval-results/navigation
+
+          if [ -f pipeline/scripts/run-navigation-evals.sh ]; then
+            bash pipeline/scripts/run-navigation-evals.sh \
+              --targets "${{ steps.targets.outputs.targets }}" \
+              --model "$MODEL" \
+              --output-dir eval-results/navigation
+          else
+            NAV_CASES=$(find . -name "*-navigation.md" -path "*/trigger-cases/*" | wc -l)
+            echo "⚠️ run-navigation-evals.sh not found"
+            echo "Found $NAV_CASES navigation eval case files"
+          fi
+
+      # ──────────────────────────────────────────────────────────
+      # REGRESSION CHECK
+      # ──────────────────────────────────────────────────────────
+
+      - name: "📉 Check for regressions"
+        if: always()
+        run: |
+          echo "=== Regression Check ==="
+          if [ -f pipeline/scripts/check-regressions.py ] && [ -d eval-baselines ]; then
+            python3 pipeline/scripts/check-regressions.py \
+              --current eval-results/ \
+              --baseline eval-baselines/ \
+              2>&1 | tee regression-output.txt
+
+            if grep -q "REGRESSION" regression-output.txt 2>/dev/null; then
+              echo "⚠️ Regressions detected — review eval-results artifacts"
+            else
+              echo "✅ No regressions detected"
+            fi
+          else
+            echo "⚠️ No baselines found — skipping regression check"
+            echo "After first successful run, save eval-results/ as eval-baselines/"
+          fi
+
+      # ──────────────────────────────────────────────────────────
+      # RESULTS SUMMARY
+      # ──────────────────────────────────────────────────────────
+
+      - name: "📊 Generate eval summary"
+        if: always()
+        run: |
+          echo "## 📊 Eval Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Model:** ${{ inputs.model || 'sonnet' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Eval type:** ${{ inputs.eval_type || 'all' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Count results by type
+          for type in output trigger navigation; do
+            if [ -d "eval-results/$type" ]; then
+              COUNT=$(find "eval-results/$type" -name "*.json" | wc -l)
+              echo "**${type^} evals:** $COUNT result files" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          # Trigger eval metrics if available
+          if [ -f eval-results/trigger/summary.json ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Trigger Reliability Metrics" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+          import json
+          with open('eval-results/trigger/summary.json') as f:
+              data = json.load(f)
+          metrics = [
+              ('Activation rate', data.get('activation_rate', 'N/A'), '≥95%'),
+              ('Correct routing', data.get('correct_routing_rate', 'N/A'), '≥90%'),
+              ('Acceptable routing', data.get('acceptable_routing_rate', 'N/A'), '≥95%'),
+              ('False positive rate', data.get('false_positive_rate', 'N/A'), '≤5%'),
+              ('Bypass rate', data.get('bypass_rate', 'N/A'), '≤10%'),
+          ]
+          print('| Metric | Result | Target |')
+          print('|--------|--------|--------|')
+          for name, val, target in metrics:
+              status = '✅' if val != 'N/A' else '—'
+              print(f'| {name} | {val} | {target} |')
+          " >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          fi
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-${{ github.sha }}
+          path: eval-results/
+          retention-days: 30

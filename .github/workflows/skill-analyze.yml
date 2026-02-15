@@ -1,0 +1,301 @@
+# .github/workflows/skill-analyze.yml
+# Stage 2: Static Analysis — runs on PRs touching skills
+# Target: <2 minutes
+#
+# Governance Spec v1.3 §8.3
+# Deep analysis: diff-aware security, reference depth, pattern compliance,
+# scope boundaries, context load reporting. Posts findings as PR comment.
+# Critical security findings block merge. All other analysis is informational.
+
+name: "Skill Static Analysis"
+
+on:
+  pull_request:
+    paths:
+      - "skills/**"
+      - "SKILL.md"
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for diff analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml tiktoken
+
+      - name: Identify changed skills
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- skills/ SKILL.md | \
+            grep -E "SKILL\.md|references/|scripts/" | \
+            sed 's|/SKILL.md||;s|/references/.*||;s|/scripts/.*||' | \
+            sort -u)
+          echo "skills<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Changed skills:"
+          echo "$CHANGED"
+
+      # ──────────────────────────────────────────────────────────
+      # SECURITY — diff-aware scan (critical findings block merge)
+      # ──────────────────────────────────────────────────────────
+
+      - name: "🔒 Diff-aware security scan"
+        id: security_diff
+        run: |
+          echo "# 🔒 Security Analysis" > analysis-report.md
+          echo "" >> analysis-report.md
+
+          # Scan only the diff for newly introduced security patterns
+          if [ -f pipeline/scripts/security-diff-scan.py ]; then
+            python3 pipeline/scripts/security-diff-scan.py \
+              --base "origin/${{ github.base_ref }}" \
+              --head "HEAD" \
+              2>&1 | tee security-diff-output.txt
+
+            if [ ${PIPESTATUS[0]} -ne 0 ]; then
+              echo "## ❌ New Security Findings" >> analysis-report.md
+              echo "" >> analysis-report.md
+              echo "The following security-relevant patterns were **introduced in this PR**:" >> analysis-report.md
+              echo "" >> analysis-report.md
+              echo '```' >> analysis-report.md
+              cat security-diff-output.txt >> analysis-report.md
+              echo '```' >> analysis-report.md
+              echo "" >> analysis-report.md
+              echo "SECURITY_CRITICAL=true" >> $GITHUB_ENV
+            else
+              echo "✅ No new security patterns introduced in this PR." >> analysis-report.md
+              echo "" >> analysis-report.md
+              echo "SECURITY_CRITICAL=false" >> $GITHUB_ENV
+            fi
+          else
+            echo "⚠️ security-diff-scan.py not found — skipping diff-aware scan." >> analysis-report.md
+            echo "" >> analysis-report.md
+            echo "SECURITY_CRITICAL=false" >> $GITHUB_ENV
+          fi
+
+      # ──────────────────────────────────────────────────────────
+      # CROSS-FILE ANALYSIS — security payload chains
+      # ──────────────────────────────────────────────────────────
+
+      - name: "🔗 Security cross-file analysis"
+        if: always()
+        run: |
+          echo "# 🔗 Cross-File Security Analysis" >> analysis-report.md
+          echo "" >> analysis-report.md
+
+          # Check if SKILL.md references lead to files with security-relevant content
+          if [ -f pipeline/scripts/security-cross-file.py ]; then
+            python3 pipeline/scripts/security-cross-file.py . 2>&1 | tee cross-file-output.txt || true
+            if [ -s cross-file-output.txt ]; then
+              echo '```' >> analysis-report.md
+              cat cross-file-output.txt >> analysis-report.md
+              echo '```' >> analysis-report.md
+            else
+              echo "✅ No security-relevant payload chains found." >> analysis-report.md
+            fi
+          else
+            echo "_Cross-file security analysis not configured._" >> analysis-report.md
+          fi
+          echo "" >> analysis-report.md
+
+      # ──────────────────────────────────────────────────────────
+      # STRUCTURAL ANALYSIS
+      # ──────────────────────────────────────────────────────────
+
+      - name: "📐 Reference depth analysis"
+        if: always()
+        run: |
+          echo "# 📐 Reference Depth Analysis" >> analysis-report.md
+          echo "" >> analysis-report.md
+
+          if [ -f pipeline/scripts/reference-depth-analysis.py ]; then
+            python3 pipeline/scripts/reference-depth-analysis.py . 2>&1 | tee depth-output.txt || true
+            if [ -s depth-output.txt ]; then
+              cat depth-output.txt >> analysis-report.md
+            else
+              echo "✅ All references are one-level-deep." >> analysis-report.md
+            fi
+          else
+            # Inline fallback: check for reference files that reference other reference files
+            echo "Running inline depth check..." 
+            VIOLATIONS=0
+            while IFS= read -r ref_file; do
+              if grep -qE '\[.*\]\(.*\.md\)' "$ref_file" 2>/dev/null; then
+                REFS_IN_REF=$(grep -cE '\[.*\]\(.*\.md\)' "$ref_file" || true)
+                if [ "$REFS_IN_REF" -gt 0 ]; then
+                  echo "⚠️ \`$ref_file\` contains $REFS_IN_REF markdown link(s) to other files — potential depth violation" >> analysis-report.md
+                  VIOLATIONS=$((VIOLATIONS + 1))
+                fi
+              fi
+            done < <(find . -path "*/references/*.md" -type f 2>/dev/null)
+
+            if [ $VIOLATIONS -eq 0 ]; then
+              echo "✅ All references are one-level-deep." >> analysis-report.md
+            fi
+          fi
+          echo "" >> analysis-report.md
+
+      - name: "📊 Context load analysis"
+        if: always()
+        run: |
+          echo "# 📊 Context Load Report" >> analysis-report.md
+          echo "" >> analysis-report.md
+
+          if [ -f pipeline/scripts/context-load-analysis.py ]; then
+            python3 pipeline/scripts/context-load-analysis.py . >> analysis-report.md 2>&1 || true
+          else
+            # Inline fallback: basic word count report
+            echo "| File | Words | Est. Tokens | Budget | Status |" >> analysis-report.md
+            echo "|------|-------|-------------|--------|--------|" >> analysis-report.md
+            find . -name "SKILL.md" -type f | while read -r f; do
+              WC=$(wc -w < "$f")
+              TOKENS=$((WC * 133 / 100))
+              # Detect type by checking for skills/ subdirectory
+              DIR=$(dirname "$f")
+              if [ -d "$DIR/skills" ]; then
+                BUDGET=800; LABEL="coordinator"
+              else
+                BUDGET=2000; LABEL="specialist"
+              fi
+              if [ $TOKENS -gt $BUDGET ]; then
+                STATUS="❌ +$((TOKENS - BUDGET))"
+              else
+                STATUS="✅"
+              fi
+              echo "| \`$f\` | $WC | ~$TOKENS | $BUDGET ($LABEL) | $STATUS |" >> analysis-report.md
+            done
+          fi
+          echo "" >> analysis-report.md
+
+      # ──────────────────────────────────────────────────────────
+      # WRITING & PATTERN ANALYSIS
+      # ──────────────────────────────────────────────────────────
+
+      - name: "✍️ Pattern compliance"
+        if: always()
+        run: |
+          echo "# ✍️ Pattern Compliance" >> analysis-report.md
+          echo "" >> analysis-report.md
+
+          if [ -f pipeline/scripts/analyze-patterns.py ]; then
+            python3 pipeline/scripts/analyze-patterns.py . >> analysis-report.md 2>&1 || true
+          else
+            echo "_Pattern analysis script not configured. Run the init prompt to generate._" >> analysis-report.md
+          fi
+          echo "" >> analysis-report.md
+
+      - name: "🔄 Scope boundary check"
+        if: always()
+        run: |
+          echo "# 🔄 Scope Boundary Analysis" >> analysis-report.md
+          echo "" >> analysis-report.md
+
+          # Compare skill descriptions to actual operations in procedure sections
+          if [ -f pipeline/scripts/scope-boundary-check.py ]; then
+            python3 pipeline/scripts/scope-boundary-check.py . >> analysis-report.md 2>&1 || true
+          else
+            echo "_Scope boundary analysis not configured._" >> analysis-report.md
+          fi
+          echo "" >> analysis-report.md
+
+      - name: "🌐 Portability check"
+        if: always()
+        run: |
+          echo "# 🌐 Portability" >> analysis-report.md
+          echo "" >> analysis-report.md
+
+          if [ -f pipeline/scripts/check-portability.sh ]; then
+            bash pipeline/scripts/check-portability.sh . >> analysis-report.md 2>&1 || true
+          else
+            # Inline fallback: flag platform-specific references
+            ISSUES=0
+            while IFS= read -r f; do
+              if grep -qE 'CLAUDE\.md|\.claude/' "$f" 2>/dev/null; then
+                echo "⚠️ \`$f\` references Claude Code-specific paths" >> analysis-report.md
+                ISSUES=$((ISSUES + 1))
+              fi
+            done < <(find . -name "SKILL.md" -type f)
+            if [ $ISSUES -eq 0 ]; then
+              echo "✅ No platform-specific references found." >> analysis-report.md
+            fi
+          fi
+          echo "" >> analysis-report.md
+
+      # ──────────────────────────────────────────────────────────
+      # POST PR COMMENT
+      # ──────────────────────────────────────────────────────────
+
+      - name: "💬 Post analysis as PR comment"
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = '## 🔍 Skill Governance Analysis\n\n';
+
+            if (fs.existsSync('analysis-report.md')) {
+              report += fs.readFileSync('analysis-report.md', 'utf8');
+            } else {
+              report += '_Analysis report not generated._';
+            }
+
+            report += '\n\n---\n_Governance Spec v1.3 • ';
+            report += '${{ env.SECURITY_CRITICAL }}' === 'true'
+              ? '❌ **Critical security findings — merge blocked**'
+              : '✅ No critical security findings';
+            report += '_';
+
+            // Find and update existing bot comment, or create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const botComment = comments.find(c =>
+              c.body.includes('Skill Governance Analysis') && c.user.type === 'Bot'
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report,
+              });
+            }
+
+      # ──────────────────────────────────────────────────────────
+      # GATE — only critical security findings block merge
+      # ──────────────────────────────────────────────────────────
+
+      - name: "Gate: block merge on critical security findings"
+        if: always()
+        run: |
+          if [ "${{ env.SECURITY_CRITICAL }}" = "true" ]; then
+            echo "❌ Critical security findings block merge."
+            echo "Review the PR comment for details and fix before merging."
+            exit 1
+          else
+            echo "✅ No critical security findings. Analysis is informational."
+          fi
