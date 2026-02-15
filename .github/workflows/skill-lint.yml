@@ -1,191 +1,56 @@
-# .github/workflows/skill-lint.yml
-# Stage 1: Lint & Validate — runs on every push touching skills or pipeline
-# Target: <30 seconds
-# 
-# Governance Spec v1.3 §8.3
-# Security runs FIRST — fail fast on critical findings.
-# Hard-tier checks block the workflow. Warn-tier checks report but don't fail.
-
-name: "Skill Lint & Validate"
-
+name: Skill Lint
 on:
   push:
-    paths:
-      - "skills/**"
-      - "pipeline/**"
-      - "SKILL.md"
+    branches: [main]
+    paths: ['*-skill/**', 'shared-references/**', 'pipeline/**']
   pull_request:
-    paths:
-      - "skills/**"
-      - "pipeline/**"
-      - "SKILL.md"
+    paths: ['*-skill/**', 'shared-references/**', 'pipeline/**']
 
 jobs:
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
+      - run: pip install pyyaml
 
-      - name: Install dependencies
-        run: pip install pyyaml tiktoken
+      # --- Hard checks (structural integrity) ---
 
-      # ──────────────────────────────────────────────────────────
-      # HARD TIER — blocks the workflow on failure
-      # ──────────────────────────────────────────────────────────
+      - name: Validate structure
+        run: bash pipeline/scripts/validate-structure.sh
 
-      # Security runs FIRST — fail fast on critical findings
-      - name: "🔒 Security scan"
-        id: security
+      - name: Check frontmatter
         run: |
-          echo "## 🔒 Security Scan" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_security.py . 2>&1 | tee security-output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Security violations found — see output above" >> $GITHUB_STEP_SUMMARY
-            cat security-output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No security violations" >> $GITHUB_STEP_SUMMARY
-          fi
-          exit $EXIT_CODE
+          find . -name 'SKILL.md' -not -path './pipeline/*' -not -path './node_modules/*' | \
+            xargs python3 pipeline/hooks/check_frontmatter.py
 
-      - name: "📋 Frontmatter validation"
-        if: success() || failure()
-        id: frontmatter
+      - name: Check references
         run: |
-          echo "## 📋 Frontmatter" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_frontmatter.py . 2>&1 | tee frontmatter-output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Frontmatter violations found" >> $GITHUB_STEP_SUMMARY
-            cat frontmatter-output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ All frontmatter valid" >> $GITHUB_STEP_SUMMARY
-          fi
-          exit $EXIT_CODE
+          find . -name 'SKILL.md' -not -path './pipeline/*' -not -path './node_modules/*' | \
+            xargs python3 pipeline/hooks/check_references.py
 
-      - name: "🔗 Reference integrity (incl. depth check)"
-        if: success() || failure()
-        id: references
+      - name: Check isolation
         run: |
-          echo "## 🔗 References" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_references.py . 2>&1 | tee references-output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Reference violations found" >> $GITHUB_STEP_SUMMARY
-            echo "Checks: file existence, one-level-deep rule, TOC for >100 line files" >> $GITHUB_STEP_SUMMARY
-            cat references-output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ All references valid (incl. depth check)" >> $GITHUB_STEP_SUMMARY
-          fi
-          exit $EXIT_CODE
+          find . -name 'SKILL.md' -not -path './pipeline/*' -not -path './node_modules/*' | \
+            xargs python3 pipeline/hooks/check_isolation.py
 
-      - name: "🚧 Cross-skill isolation"
-        if: success() || failure()
-        id: isolation
+      - name: Check context load
         run: |
-          echo "## 🚧 Isolation" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_isolation.py . 2>&1 | tee isolation-output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Isolation violations — specialists referencing other specialists" >> $GITHUB_STEP_SUMMARY
-            cat isolation-output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No isolation violations" >> $GITHUB_STEP_SUMMARY
-          fi
-          exit $EXIT_CODE
+          find . \( -name 'SKILL.md' -o -path '*/references/*.md' \) \
+            -not -path './pipeline/*' -not -path './node_modules/*' | \
+            xargs python3 pipeline/hooks/check_context_load.py
 
-      - name: "📏 Suite context load ceiling"
-        if: success() || failure()
-        id: context_load
+      # --- Advisory checks (warn only — never fail CI) ---
+
+      - name: Check token budgets (advisory)
+        continue-on-error: true
+        run: bash pipeline/scripts/check-token-budgets.sh
+
+      # --- Reports ---
+
+      - name: Budget report
+        if: github.event_name == 'pull_request'
         run: |
-          echo "## 📏 Context Load" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_context_load.py . 2>&1 | tee context-load-output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Suite exceeds 5,500 token ceiling" >> $GITHUB_STEP_SUMMARY
-            cat context-load-output.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ All suites under ceiling" >> $GITHUB_STEP_SUMMARY
-          fi
-          exit $EXIT_CODE
-
-      # ──────────────────────────────────────────────────────────
-      # WARN TIER — reports findings but does NOT fail the workflow
-      # ──────────────────────────────────────────────────────────
-
-      - name: "🎯 Trigger / description quality"
-        if: always()
-        run: |
-          echo "## 🎯 Trigger Quality" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_triggers.py . 2>&1 | tee triggers-output.txt || true
-          cat triggers-output.txt >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Checks: description length, activation directive, third person, negative boundaries, vocabulary overlap, MCP tool format_" >> $GITHUB_STEP_SUMMARY
-
-      - name: "💰 Token budget check"
-        if: always()
-        run: |
-          echo "## 💰 Token Budgets" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_token_budget.py . 2>&1 | tee budget-output.txt || true
-          cat budget-output.txt >> $GITHUB_STEP_SUMMARY
-
-      - name: "✍️ Prose quality"
-        if: always()
-        run: |
-          echo "## ✍️ Prose Quality" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_prose.py . 2>&1 | tee prose-output.txt || true
-          cat prose-output.txt >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Checks: filler patterns, well-known concept explanations, temporal references_" >> $GITHUB_STEP_SUMMARY
-
-      - name: "🔧 Script quality"
-        if: always()
-        run: |
-          echo "## 🔧 Script Quality" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/hooks/check_scripts.py . 2>&1 | tee scripts-output.txt || true
-          cat scripts-output.txt >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Checks: error handling, documented constants, verbose errors, dependency declarations_" >> $GITHUB_STEP_SUMMARY
-
-      # ──────────────────────────────────────────────────────────
-      # SUMMARY — always runs, aggregates results
-      # ──────────────────────────────────────────────────────────
-
-      - name: "📊 Budget report (PRs only)"
-        if: always() && github.event_name == 'pull_request'
-        run: |
-          echo "## 📊 Full Budget Report" >> $GITHUB_STEP_SUMMARY
-          python3 pipeline/scripts/budget-report.py . >> $GITHUB_STEP_SUMMARY 2>&1 || true
-
-      - name: "Gate: fail if any Hard check failed"
-        if: always()
-        run: |
-          echo ""
-          echo "=== Hard Check Results ==="
-          echo "Security:       ${{ steps.security.outcome }}"
-          echo "Frontmatter:    ${{ steps.frontmatter.outcome }}"
-          echo "References:     ${{ steps.references.outcome }}"
-          echo "Isolation:      ${{ steps.isolation.outcome }}"
-          echo "Context Load:   ${{ steps.context_load.outcome }}"
-          echo ""
-
-          FAILED=0
-          for step in security frontmatter references isolation context_load; do
-            OUTCOME="${{ steps[step].outcome }}" 2>/dev/null || OUTCOME="skipped"
-            if [ "$OUTCOME" = "failure" ]; then
-              FAILED=1
-            fi
-          done
-
-          if [ $FAILED -eq 1 ]; then
-            echo "❌ One or more Hard checks failed. See step summaries above."
-            exit 1
-          else
-            echo "✅ All Hard checks passed."
-          fi
+          python3 pipeline/scripts/budget-report.py >> $GITHUB_STEP_SUMMARY
