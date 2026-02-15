@@ -157,10 +157,15 @@ Worst-case context cost: coordinator (~1,094) + specialist (~1,528) + reference 
 # Install into a Next.js project
 ./install.sh /path/to/your/nextjs-project
 
-# Install specific skills only
+# Install globally (available to all projects)
+./install.sh --global
+
+# Install specific roles
 ./install.sh --role diagnosis /path/to/your/nextjs-project
-./install.sh --role full /path/to/your/nextjs-project
+./install.sh --role diagnosis --global
 ```
+
+Skills are installed to `.claude/skills/frontend-qa/` and slash commands to `.claude/commands/`.
 
 ### Role-Based Presets
 
@@ -171,6 +176,14 @@ Worst-case context cost: coordinator (~1,094) + specialist (~1,528) + reference 
 | Fix & Test | `./install.sh --role remediation` | component-fix-and-verify, regression-test-generator |
 
 Shared references are always installed regardless of role.
+
+### Global vs Project Install
+
+| | Project (`./install.sh /path`) | Global (`./install.sh --global`) |
+|---|---|---|
+| Skills location | `<project>/.claude/skills/frontend-qa/` | `~/.claude/skills/frontend-qa/` |
+| Commands location | `<project>/.claude/commands/` | `~/.claude/commands/` |
+| Cache dirs | Created at install time | Created per-project on first use |
 
 ---
 

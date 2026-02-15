@@ -2,18 +2,23 @@
 set -euo pipefail
 
 # Frontend QA Skills Installer
-# Copies skill suite into a target Next.js project's .claude/skills/frontend-qa/
+# Copies skill suite into a project's .claude/skills/frontend-qa/ or ~/.claude/skills/frontend-qa/
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(cat "$SCRIPT_DIR/VERSION")"
 ROLE="full"
+INSTALL_MODE="project"
 TARGET_DIR=""
 
 usage() {
   cat <<EOF
 Frontend QA Skills Installer v${VERSION}
 
-Usage: ./install.sh [--role ROLE] TARGET_PROJECT_DIR
+Usage: ./install.sh [--role ROLE] [--global | TARGET_PROJECT_DIR]
+
+Options:
+  --global      Install to ~/.claude/ (available to all projects)
+  --role ROLE   Install a subset of skills (default: full)
 
 Roles:
   full          All 6 skills + shared references (default)
@@ -23,6 +28,8 @@ Roles:
 Examples:
   ./install.sh /path/to/my-nextjs-app
   ./install.sh --role diagnosis /path/to/my-nextjs-app
+  ./install.sh --global
+  ./install.sh --role diagnosis --global
 EOF
   exit 1
 }
@@ -34,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       ROLE="$2"
       shift 2
       ;;
+    --global)
+      INSTALL_MODE="global"
+      shift
+      ;;
     -h|--help)
       usage
       ;;
@@ -44,43 +55,58 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$TARGET_DIR" ]]; then
-  echo "Error: No target project directory specified."
-  usage
-fi
-
-if [[ ! -d "$TARGET_DIR" ]]; then
-  echo "Error: Target directory does not exist: $TARGET_DIR"
-  exit 1
-fi
-
-# Validate target is a Next.js project
-if [[ ! -f "$TARGET_DIR/package.json" ]]; then
-  echo "Error: No package.json found in $TARGET_DIR. Is this a Node.js project?"
-  exit 1
-fi
-
-if ! grep -q '"next"' "$TARGET_DIR/package.json" 2>/dev/null; then
-  echo "Warning: 'next' not found in package.json dependencies. This suite is designed for Next.js projects."
-  read -r -p "Continue anyway? [y/N] " response
-  if [[ ! "$response" =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 0
+if [[ "$INSTALL_MODE" == "global" ]]; then
+  if [[ -n "$TARGET_DIR" ]]; then
+    echo "Error: --global and TARGET_PROJECT_DIR are mutually exclusive."
+    exit 1
   fi
+  BASE_DIR="$HOME/.claude"
+else
+  if [[ -z "$TARGET_DIR" ]]; then
+    echo "Error: No target project directory specified."
+    usage
+  fi
+
+  if [[ ! -d "$TARGET_DIR" ]]; then
+    echo "Error: Target directory does not exist: $TARGET_DIR"
+    exit 1
+  fi
+
+  # Validate target is a Next.js project
+  if [[ ! -f "$TARGET_DIR/package.json" ]]; then
+    echo "Error: No package.json found in $TARGET_DIR. Is this a Node.js project?"
+    exit 1
+  fi
+
+  if ! grep -q '"next"' "$TARGET_DIR/package.json" 2>/dev/null; then
+    echo "Warning: 'next' not found in package.json dependencies. This suite is designed for Next.js projects."
+    read -r -p "Continue anyway? [y/N] " response
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+      echo "Aborted."
+      exit 0
+    fi
+  fi
+  BASE_DIR="$TARGET_DIR/.claude"
 fi
 
-DEST="$TARGET_DIR/.claude/skills/frontend-qa"
-CACHE_DIR="$TARGET_DIR/.claude/qa-cache"
+DEST="$BASE_DIR/skills/frontend-qa"
+COMMANDS_DIR="$BASE_DIR/commands"
 
 echo "Installing frontend-qa-skills v${VERSION} (role: ${ROLE}) to:"
-echo "  Skills: $DEST"
-echo "  Cache:  $CACHE_DIR"
+echo "  Skills:   $DEST"
+echo "  Commands: $COMMANDS_DIR"
+if [[ "$INSTALL_MODE" == "project" ]]; then
+  CACHE_DIR="$BASE_DIR/qa-cache"
+  echo "  Cache:    $CACHE_DIR"
+fi
 echo ""
 
 # Create directories
 mkdir -p "$DEST"
-mkdir -p "$CACHE_DIR/component-maps"
-mkdir -p "$CACHE_DIR/artifacts"
+if [[ "$INSTALL_MODE" == "project" ]]; then
+  mkdir -p "$CACHE_DIR/component-maps"
+  mkdir -p "$CACHE_DIR/artifacts"
+fi
 
 # Define skill sets per role
 SKILLS_FULL="qa-coordinator page-component-mapper ui-bug-investigator css-layout-debugger component-fix-and-verify regression-test-generator"
@@ -119,26 +145,35 @@ if [[ -d "$SCRIPT_DIR/shared-references" ]]; then
   echo "  Installed: shared-references"
 fi
 
-# Copy commands
+# Copy commands to .claude/commands/ (where Claude Code discovers them)
 if [[ -d "$SCRIPT_DIR/commands" ]]; then
-  cp -r "$SCRIPT_DIR/commands" "$DEST/"
-  echo "  Installed: commands"
+  mkdir -p "$COMMANDS_DIR"
+  for cmd in "$SCRIPT_DIR/commands/"*.md; do
+    cp "$cmd" "$COMMANDS_DIR/"
+  done
+  echo "  Installed: commands -> $COMMANDS_DIR"
 fi
 
-# Add qa-cache to .gitignore if not already present
-GITIGNORE="$TARGET_DIR/.gitignore"
-if [[ -f "$GITIGNORE" ]]; then
-  if ! grep -q ".claude/qa-cache" "$GITIGNORE" 2>/dev/null; then
-    echo "" >> "$GITIGNORE"
-    echo "# Frontend QA Skills cache" >> "$GITIGNORE"
-    echo ".claude/qa-cache/" >> "$GITIGNORE"
-    echo "  Updated .gitignore: added .claude/qa-cache/"
+# Add qa-cache to .gitignore if not already present (project installs only)
+if [[ "$INSTALL_MODE" == "project" ]]; then
+  GITIGNORE="$TARGET_DIR/.gitignore"
+  if [[ -f "$GITIGNORE" ]]; then
+    if ! grep -q ".claude/qa-cache" "$GITIGNORE" 2>/dev/null; then
+      echo "" >> "$GITIGNORE"
+      echo "# Frontend QA Skills cache" >> "$GITIGNORE"
+      echo ".claude/qa-cache/" >> "$GITIGNORE"
+      echo "  Updated .gitignore: added .claude/qa-cache/"
+    fi
   fi
 fi
 
 echo ""
 echo "Done. Installed ${ROLE} skills to $DEST"
 echo ""
+if [[ "$INSTALL_MODE" == "global" ]]; then
+  echo "Note: Cache directories (.claude/qa-cache/) are created per-project on first use."
+  echo ""
+fi
 echo "Usage:"
 echo '  Describe a bug: "The /dashboard page sidebar overlaps on mobile"'
 echo '  Or use a slash command: /qa, /map, /diagnose, /fix'
