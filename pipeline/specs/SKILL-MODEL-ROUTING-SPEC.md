@@ -95,7 +95,7 @@ tiers:
   opus:
     claude_code: claude-opus-4-6
     codex: gpt-5.3-codex-xl    # hypothetical — map to best available
-    description: "Adversarial security analysis, formal verification, vulnerability chain synthesis"
+    description: "Complex debugging, architectural reasoning, novel problem-solving"
     cost_ratio: 25         # ~25x haiku (Opus: $15/$75 per MTok)
 
 # Session defaults
@@ -169,7 +169,7 @@ Step 1: Downgrade coordinators to haiku (if not already)
 
 Step 2: Downgrade low reasoning_demand specialists to haiku
         → Mechanical tasks: file tracing, pattern matching, counting
-        → Savings: ~8x per task vs sonnet, ~60x vs opus
+        → Savings: ~5x per task vs sonnet, ~25x vs opus
 
 Step 3: Downgrade medium reasoning_demand specialists to sonnet
         → Analytical tasks: classification, code review, standard fixes
@@ -688,7 +688,7 @@ Use eval results to refine routing decisions:
 │  Coordinator .............. haiku (routing only)          │
 │  Mechanical specialist .... haiku (tracing, matching)     │
 │  Analytical specialist .... sonnet (classification, code) │
-│  Reasoning specialist ..... opus (adversarial, formal)    │
+│  Reasoning specialist ..... opus (debugging, architecture) │
 │                                                           │
 │  COST RATIOS                                              │
 │  haiku = 1x  |  sonnet = ~5x  |  opus = ~25x             │
