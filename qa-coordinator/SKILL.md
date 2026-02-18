@@ -32,7 +32,7 @@ Classify frontend bug symptoms, dispatch to the appropriate specialist skill, an
 
 Extract **route** and **symptom** from user input. If ambiguous, ask one question.
 
-Auto-detect the stack if no `.claude/qa-cache/project-config.json` exists: read `package.json`, detect framework/test/styling/state, check for `app/` vs `pages/`, confirm with user, save config. Re-detect only when `package.json` changes.
+Auto-detect the stack if no `.claude/qa-cache/project-config.json` exists: read `package.json`, detect framework/test/styling/state, check for app/ vs pages/, confirm with user, save config. Re-detect only when `package.json` changes.
 
 | Symptom | Skill |
 |---------|-------|
@@ -49,7 +49,7 @@ Auto-detect the stack if no `.claude/qa-cache/project-config.json` exists: read 
 
 | Skill | Path | Purpose | Model Tier |
 |-------|------|---------|------------|
-| Mapper | `page-component-mapper/SKILL.md` | Map route to component tree | sonnet |
+| Mapper | `page-component-mapper/SKILL.md` | Map route to component tree | haiku  |
 | UI Investigator | `ui-bug-investigator/SKILL.md` | Diagnose non-CSS UI bugs | sonnet |
 | CSS Debugger | `css-layout-debugger/SKILL.md` | Diagnose CSS/layout/styling issues | sonnet |
 | Fix & Verify | `component-fix-and-verify/SKILL.md` | Apply and verify diagnosed fix | sonnet |
@@ -63,7 +63,7 @@ Read ONLY the relevant specialist SKILL.md for the current phase. Never load mul
 
 Sequential four-phase pipeline. Pause for user confirmation between each phase.
 
-**MAP** → Read `page-component-mapper/SKILL.md`. Output: `ComponentMap` artifact at `.claude/qa-cache/component-maps/`. Pause: "{N} components mapped. Continue?"
+**MAP** → Read `page-component-mapper/SKILL.md`. Output: `ComponentMap` artifact at .claude/qa-cache/component-maps/. Pause: "{N} components mapped. Continue?"
 
 **DIAGNOSE** → Read classified specialist SKILL.md. Input: ComponentMap path + symptom + classification. Output: `DiagnosisReport` artifact. Pause: "Root cause: {description} in {file}:{line}. Proceed with fix?"
 
