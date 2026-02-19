@@ -10,12 +10,15 @@ A suite of Claude Code skills for component-level frontend QA in Next.js App Rou
 # 1. Clone the skill suite
 git clone https://github.com/dtsong/frontend-qa-skills.git
 
-# 2. Install into your project
-./frontend-qa-skills/install.sh /path/to/your-nextjs-app
+# 2. Install globally — works with every Next.js project
+./frontend-qa-skills/install.sh --global
 
-# 3. Start Claude Code in your project and describe the bug
+# 3. Start Claude Code in any Next.js project
 cd /path/to/your-nextjs-app && claude
 # then type: /qa
+
+# Alternative: install into one specific project only
+# ./frontend-qa-skills/install.sh /path/to/your-nextjs-app
 ```
 
 ## Slash Commands
@@ -52,19 +55,64 @@ Six skills form a pipeline, loaded one at a time (~4,100 tokens worst-case):
 5. **component-fix-and-verify** -- applies fix with pre-flight baseline, scoped verification, and broad verification
 6. **regression-test-generator** -- convention-aware test generation for Vitest+RTL, Jest+RTL, and Playwright
 
+```mermaid
+flowchart TD
+    U([User: route + symptom]) --> C
+
+    C["qa-coordinator · Haiku\nClassify symptom, detect stack, dispatch"]
+
+    C --> M
+
+    subgraph MAP ["Phase 1 · MAP"]
+        M["page-component-mapper · Haiku"]
+        M --> CM[/"ComponentMap artifact"/]
+        CM --> G1["⏸ Confirm component tree"]
+    end
+
+    G1 --> SYM
+
+    SYM{Symptom type}
+
+    subgraph DIAGNOSE ["Phase 2 · DIAGNOSE"]
+        SYM -->|UI / behavior| UI["ui-bug-investigator · Sonnet"]
+        SYM -->|CSS / layout| CSS["css-layout-debugger · Sonnet"]
+        UI --> DR[/"DiagnosisReport artifact"/]
+        CSS --> DR
+        DR --> G2["⏸ Confirm diagnosis"]
+    end
+
+    G2 --> FX
+
+    subgraph FIX ["Phase 3 · FIX"]
+        FX["component-fix-and-verify · Sonnet"]
+        FX --> FR[/"FixResult — PASS / FAIL / PARTIAL"/]
+        FR --> G3["⏸ Confirm fix"]
+    end
+
+    G3 --> TS
+
+    subgraph TEST ["Phase 4 · TEST"]
+        TS["regression-test-generator · Sonnet"]
+        TS --> RT[/"RegressionTest artifact"/]
+        RT --> G4["⏸ Confirm test"]
+    end
+
+    G4 --> DONE([Done])
+```
+
 See [CATALOG.md](CATALOG.md) for trigger keywords, pipeline diagram, and sizing details.
 
 ## Installation Options
 
 ```bash
-# Into a specific project
-./install.sh /path/to/your-nextjs-app
-
-# Globally (available to all projects)
+# Globally — recommended (available to all projects)
 ./install.sh --global
 
-# Subset of skills (diagnosis-only or remediation-only)
-./install.sh --role diagnosis /path/to/your-nextjs-app
+# Per-project (when you want project-scoped installation)
+./install.sh /path/to/your-nextjs-app
+
+# Role subsets — global or per-project
+./install.sh --role diagnosis --global
 ./install.sh --role remediation --global
 ```
 
