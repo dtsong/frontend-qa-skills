@@ -16,36 +16,49 @@
 
 ## Pipeline Flow
 
-```
-USER REPORT (route + description + optional screenshot)
-       |
-       v
- qa-coordinator (auto-detect stack, classify symptom, dispatch)
-       |
-       v
- page-component-mapper (build/refresh component map)
-       |
-       +---> [PAUSE: confirm component tree]
-       |
-       v
- qa-coordinator (route to specialist)
-       |
-       +----> ui-bug-investigator ------+
-       +----> css-layout-debugger ------+---> DiagnosisReport
-       |                                |
-       +---> [PAUSE: confirm diagnosis] <+
-       |
-       v
- component-fix-and-verify (apply fix, verify)
-       |
-       +---> [PAUSE: confirm fix result]
-       |
-       v
- regression-test-generator (generate targeted test)
-       |
-       +---> [PAUSE: confirm test]
-       v
-     DONE
+```mermaid
+flowchart TD
+    U([User: route + symptom]) --> C
+
+    C["qa-coordinator · Haiku\nClassify symptom, detect stack, dispatch"]
+
+    C --> M
+
+    subgraph MAP ["Phase 1 · MAP"]
+        M["page-component-mapper · Haiku"]
+        M --> CM[/"ComponentMap artifact"/]
+        CM --> G1["⏸ Confirm component tree"]
+    end
+
+    G1 --> SYM
+
+    SYM{Symptom type}
+
+    subgraph DIAGNOSE ["Phase 2 · DIAGNOSE"]
+        SYM -->|UI / behavior| UI["ui-bug-investigator · Sonnet"]
+        SYM -->|CSS / layout| CSS["css-layout-debugger · Sonnet"]
+        UI --> DR[/"DiagnosisReport artifact"/]
+        CSS --> DR
+        DR --> G2["⏸ Confirm diagnosis"]
+    end
+
+    G2 --> FX
+
+    subgraph FIX ["Phase 3 · FIX"]
+        FX["component-fix-and-verify · Sonnet"]
+        FX --> FR[/"FixResult — PASS / FAIL / PARTIAL"/]
+        FR --> G3["⏸ Confirm fix"]
+    end
+
+    G3 --> TS
+
+    subgraph TEST ["Phase 4 · TEST"]
+        TS["regression-test-generator · Sonnet"]
+        TS --> RT[/"RegressionTest artifact"/]
+        RT --> G4["⏸ Confirm test"]
+    end
+
+    G4 --> DONE([Done])
 ```
 
 Each stage produces a typed artifact consumed by the next:
@@ -154,18 +167,18 @@ Worst-case context cost: coordinator (~1,094) + specialist (~1,528) + reference 
 ## Installation
 
 ```bash
-# Install into a Next.js project
-./install.sh /path/to/your/nextjs-project
-
-# Install globally (available to all projects)
+# Install globally — recommended (available to all projects)
 ./install.sh --global
 
+# Install into a specific Next.js project
+./install.sh /path/to/your/nextjs-project
+
 # Install specific roles
-./install.sh --role diagnosis /path/to/your/nextjs-project
 ./install.sh --role diagnosis --global
+./install.sh --role diagnosis /path/to/your/nextjs-project
 ```
 
-Skills are installed to `.claude/skills/frontend-qa/` and slash commands to `.claude/commands/`.
+Skills are installed to `~/.claude/skills/frontend-qa/` by default (global), or to `<project>/.claude/skills/frontend-qa/` for project-scoped installs.
 
 ### Role-Based Presets
 
