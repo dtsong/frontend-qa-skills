@@ -16,6 +16,16 @@ BACKTICK_PATH_RE = re.compile(r"`([^`]+(?:\.md|/))`")
 TABLE_PATH_RE = re.compile(r"\|\s*`?([^|`\s]+(?:\.md|/))`?\s*\|")
 BARE_PATH_RE = re.compile(r"(?:^|\s)((?:references|shared-references)/[^\s)>\]]+(?:\.md|/))")
 
+# Paths that exist in the user's target project or Claude's runtime cache —
+# not in this skill repo. Skip existence checks for these prefixes.
+EXTERNAL_PATH_PREFIXES = frozenset({
+    ".claude/",   # Claude Code runtime cache (e.g. .claude/qa-cache/)
+    "app/",       # Next.js App Router source directory
+    "pages/",     # Next.js Pages Router source directory
+    "__tests__/", # Colocated Jest test directory
+    "tests/",     # Root-level test directory
+})
+
 
 def find_references(text):
     """Find all file path references in text. Returns list of (line_num, path)."""
@@ -103,6 +113,8 @@ def check_file(filepath, repo_root):
                     search_bases.append(entry_path)
 
     for line_num, ref_path in refs:
+        if any(ref_path.startswith(prefix) for prefix in EXTERNAL_PATH_PREFIXES):
+            continue
         found = False
         for base in search_bases:
             resolved = os.path.normpath(os.path.join(base, ref_path))
