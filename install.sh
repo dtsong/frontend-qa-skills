@@ -19,6 +19,7 @@ Usage: ./install.sh [--role ROLE] [--global | TARGET_PROJECT_DIR]
 Options:
   --global      Install to ~/.claude/ (available to all projects)
   --role ROLE   Install a subset of skills (default: full)
+  --force       Force reinstall even if already installed
 
 Roles:
   full          All 6 skills + shared references (default)
@@ -35,6 +36,8 @@ EOF
 }
 
 # Parse arguments
+FORCE_MODE=false
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --role)
@@ -43,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --global)
       INSTALL_MODE="global"
+      shift
+      ;;
+    --force)
+      FORCE_MODE=true
       shift
       ;;
     -h|--help)
@@ -91,6 +98,14 @@ fi
 
 DEST="$BASE_DIR/skills/frontend-qa"
 COMMANDS_DIR="$BASE_DIR/commands"
+
+# Check if already installed
+if [[ -d "$DEST" ]] && [[ "$FORCE_MODE" != true ]]; then
+  echo "[SUCCESS] Frontend QA skills already installed at $DEST"
+  echo ""
+  echo "[INFO] To force reinstall: ./install.sh --force [same options]"
+  exit 0
+fi
 
 echo "Installing frontend-qa-skills v${VERSION} (role: ${ROLE}) to:"
 echo "  Skills:   $DEST"
